@@ -21,16 +21,27 @@ const (
 	WriteQuery
 )
 
+type Result struct {
+	isPresent bool
+	value     uint64
+}
+
 type Query struct {
 	queryType QueryType
 	key       uint64
 	value     uint64
+	result    Result
 }
 
 func (q Query) String() string {
 	switch q.queryType {
 	case ReadQuery:
-		return fmt.Sprintf("READ,%d\n", q.key)
+		if q.result.isPresent {
+			return fmt.Sprintf("READ,%d,%d\n", q.key, q.result.value)
+		} else {
+			return fmt.Sprintf("READ,%d\n", q.key)
+		}
+
 	case WriteQuery:
 		return fmt.Sprintf("WRITE,%d,%d\n", q.key, q.value)
 	}
@@ -152,7 +163,15 @@ func main() {
 			if choose < selectivityPct {
 				randIdx := rand.Intn(len(entries))
 
-				queries = append(queries, Query{ReadQuery, entries[randIdx].key, uint64(0)})
+				queries = append(queries, Query{
+					ReadQuery,
+					entries[randIdx].key,
+					uint64(0),
+					Result{
+						true,
+						entries[randIdx].value,
+					},
+				})
 			} else {
 				var key uint64
 				for key = rand.Uint64(); ; {
@@ -163,7 +182,15 @@ func main() {
 					}
 				}
 
-				queries = append(queries, Query{ReadQuery, key, uint64(0)})
+				queries = append(queries, Query{
+					ReadQuery,
+					key,
+					uint64(0),
+					Result{
+						false,
+						uint64(0),
+					},
+				})
 			}
 		} else {
 			key := keyFunc(keyCount)
@@ -172,7 +199,25 @@ func main() {
 
 			entriesSet[key] = true
 			entries = append(entries, Entry{key, value})
-			queries = append(queries, Query{WriteQuery, key, value})
+
+			queries = append(queries, Query{
+				WriteQuery,
+				key,
+				value,
+				Result{
+					false,
+					uint64(0),
+				},
+			})
+			queries = append(queries, Query{
+				ReadQuery,
+				key,
+				uint64(0),
+				Result{
+					true,
+					value,
+				},
+			})
 		}
 	}
 
