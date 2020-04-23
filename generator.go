@@ -30,20 +30,15 @@ type Query struct {
 	queryType QueryType
 	key       uint64
 	value     uint64
-	result    Result
 }
 
 func (q Query) String() string {
 	switch q.queryType {
 	case ReadQuery:
-		if q.result.isPresent {
-			return fmt.Sprintf("READ,%d,%d\n", q.key, q.result.value)
-		} else {
-			return fmt.Sprintf("READ,%d\n", q.key)
-		}
+		return fmt.Sprintf("read %d\n", q.key)
 
 	case WriteQuery:
-		return fmt.Sprintf("WRITE,%d,%d\n", q.key, q.value)
+		return fmt.Sprintf("write %d %d\n", q.key, q.value)
 	}
 
 	return ""
@@ -100,9 +95,10 @@ func main() {
 	keyDistribution := flag.Int("keyDistribution", 0, "the distribution of the keys; 0 for uniform, 1 for normal, 2 for sequential")
 	valueDistribution := flag.Int("valueDistribution", 0, "the distribution of the values; 0 for uniform, 1 for same as key")
 	selectivity := flag.Int("selectivity", 100, "the selectivity of reads; integer 0 to 100")
-	dataFileName := flag.String("dataFile", "../data", "the file to write data to")
-	queryFileName := flag.String("queryFile", "../queries", "the file to write queries to")
-	readPercentageFlag := flag.Int("readPercentage", 100, "the percent of queries that are reads; integer 0 to 100")
+	dataFileName := flag.String("dataFile", "data.csv", "the file to write data to")
+	queryFileName := flag.String("queryFile", "queries.dsl", "the file to write queries to")
+	expectedFileName := flag.String("expectedFile", "test.exp", "the file to write expected results to")
+	readPercentageFlag := flag.Int("readPercentage", 50, "the percent of queries that are reads; integer 0 to 100")
 	flag.Parse()
 
 	f, err := os.Create(*dataFileName)
@@ -152,7 +148,11 @@ func main() {
 
 	queryWriter := bufio.NewWriter(queryFile)
 
+	queryWriter.WriteString(fmt.Sprintf("load %s\n", *dataFileName))
+
 	queries := make([]Query, 0)
+
+	expectedResults := make([]uint64, 0)
 
 	for i := 0; i < *numQueries; i++ {
 		queryChoice := rand.Float64()
@@ -167,11 +167,8 @@ func main() {
 					ReadQuery,
 					entries[randIdx].key,
 					uint64(0),
-					Result{
-						true,
-						entries[randIdx].value,
-					},
 				})
+				expectedResults = append(expectedResults, entries[randIdx].value)
 			} else {
 				var key uint64
 				for key = rand.Uint64(); ; {
@@ -186,10 +183,6 @@ func main() {
 					ReadQuery,
 					key,
 					uint64(0),
-					Result{
-						false,
-						uint64(0),
-					},
 				})
 			}
 		} else {
@@ -204,20 +197,13 @@ func main() {
 				WriteQuery,
 				key,
 				value,
-				Result{
-					false,
-					uint64(0),
-				},
 			})
 			queries = append(queries, Query{
 				ReadQuery,
 				key,
 				uint64(0),
-				Result{
-					true,
-					value,
-				},
 			})
+			expectedResults = append(expectedResults, value)
 		}
 	}
 
@@ -226,4 +212,17 @@ func main() {
 	}
 
 	queryWriter.Flush()
+
+	expectedFile, err := os.Create(*expectedFileName)
+	if err != nil {
+		panic(err)
+	}
+	defer expectedFile.Close()
+
+	expectedWriter := bufio.NewWriter(expectedFile)
+
+	for _, v := range(expectedResults) {
+		expectedWriter.WriteString(fmt.Sprintf("%d\n", v))
+	}
+	expectedWriter.Flush()
 }
