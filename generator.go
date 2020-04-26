@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -10,8 +11,8 @@ import (
 )
 
 type Entry struct {
-	key   uint64
-	value uint64
+	key   int32
+	value int32
 }
 
 type QueryType int
@@ -23,13 +24,13 @@ const (
 
 type Result struct {
 	isPresent bool
-	value     uint64
+	value     int32
 }
 
 type Query struct {
 	queryType QueryType
-	key       uint64
-	value     uint64
+	key       int32
+	value     int32
 }
 
 func (q Query) String() string {
@@ -62,37 +63,37 @@ const (
 	ValueSame
 )
 
-var entriesSet = make(map[uint64]bool)
+var entriesSet = make(map[int32]bool)
 var entries = make([]Entry, 0)
 
-func uniformKey(i int) uint64 {
-	return rand.Uint64()
+func uniformKey(i int) int32 {
+	return rand.Int31()
 }
 
-// func normalKey(i int) uint64 {
-// 	return uint64(rand.NormFloat64()*(math.MaxUint64/6) + (math.MaxUint64 / 2))
-// }
-
-func sequentialKey(i int) uint64 {
-	return uint64(i)
+func sequentialKey(i int) int32 {
+	return int32(i)
 }
 
-func uniformValue(key uint64) uint64 {
-	return rand.Uint64()
+func normalKey(i int) int32 {
+	return int32(rand.NormFloat64()*math.MaxInt32/8 + math.MaxInt32/2)
 }
 
-func sameValue(key uint64) uint64 {
+func uniformValue(key int32) int32 {
+	return int32(rand.Uint32())
+}
+
+func sameValue(key int32) int32 {
 	return key
 }
 
-var keyDistributions = map[KeyDistribution](func(int) uint64){0: uniformKey, 1: sequentialKey}
-var valueDistributions = map[ValueDistribution](func(uint64) uint64){0: uniformValue, 1: sameValue}
+var keyDistributions = map[KeyDistribution](func(int) int32){0: uniformKey, 1: sequentialKey, 2: normalKey}
+var valueDistributions = map[ValueDistribution](func(int32) int32){0: uniformValue, 1: sameValue}
 
 func main() {
 	// parse options for the generator
 	N := flag.Int("N", int(math.Pow(10, 7)), "the number of entries to start the db with")
 	numQueries := flag.Int("queries", int(math.Pow(10, 7)), "the number of queries to generate")
-	keyDistribution := flag.Int("keyDistribution", 0, "the distribution of the keys; 0 for uniform, 1 for normal, 2 for sequential")
+	keyDistribution := flag.Int("keyDistribution", 0, "the distribution of the keys; 0 for uniform, 1 for sequential")
 	valueDistribution := flag.Int("valueDistribution", 0, "the distribution of the values; 0 for uniform, 1 for same as key")
 	selectivity := flag.Int("selectivity", 100, "the selectivity of reads; integer 0 to 100")
 	dataFileName := flag.String("dataFile", "data.csv", "the file to write data to")
@@ -100,6 +101,10 @@ func main() {
 	expectedFileName := flag.String("expectedFile", "test.exp", "the file to write expected results to")
 	readPercentageFlag := flag.Int("readPercentage", 50, "the percent of queries that are reads; integer 0 to 100")
 	flag.Parse()
+
+	if *N > math.MaxInt32 {
+		panic(errors.New("Too many initial entries"))
+	}
 
 	f, err := os.Create(*dataFileName)
 	if err != nil {
@@ -118,9 +123,9 @@ func main() {
 	var keyCount int
 
 	for keyCount = 0; keyCount < *N; keyCount++ {
-		var key uint64
+		var key int32
 
-		for key = keyFunc(keyCount); ; {
+		for key = keyFunc(keyCount); ; key = keyFunc(keyCount) {
 			_, present := entriesSet[key]
 
 			if !present {
@@ -152,7 +157,7 @@ func main() {
 
 	queries := make([]Query, 0)
 
-	expectedResults := make([]uint64, 0)
+	expectedResults := make([]int32, 0)
 
 	for i := 0; i < *numQueries; i++ {
 		queryChoice := rand.Float64()
@@ -166,12 +171,12 @@ func main() {
 				queries = append(queries, Query{
 					ReadQuery,
 					entries[randIdx].key,
-					uint64(0),
+					int32(0),
 				})
 				expectedResults = append(expectedResults, entries[randIdx].value)
 			} else {
-				var key uint64
-				for key = rand.Uint64(); ; {
+				var key int32
+				for key = rand.Int31(); ; key = rand.Int31() {
 					_, present := entriesSet[key]
 
 					if !present {
@@ -182,7 +187,7 @@ func main() {
 				queries = append(queries, Query{
 					ReadQuery,
 					key,
-					uint64(0),
+					int32(0),
 				})
 			}
 		} else {
@@ -201,7 +206,7 @@ func main() {
 			queries = append(queries, Query{
 				ReadQuery,
 				key,
-				uint64(0),
+				int32(0),
 			})
 			expectedResults = append(expectedResults, value)
 		}
@@ -221,7 +226,7 @@ func main() {
 
 	expectedWriter := bufio.NewWriter(expectedFile)
 
-	for _, v := range(expectedResults) {
+	for _, v := range expectedResults {
 		expectedWriter.WriteString(fmt.Sprintf("%d\n", v))
 	}
 	expectedWriter.Flush()
